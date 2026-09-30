@@ -3,12 +3,21 @@
  *
  * Wraps the Depllo REST API (https://depllo.forjio.com/api/v1) and the
  * family `{ data, error, meta }` envelope. Every method returns the
- * envelope; failed HTTP responses reject with a `DeplloError`.
+ * envelope; a route that answers with bytes (a job artifact, a badge SVG)
+ * returns a `DeplloFile` as its `data`. Failed HTTP responses reject with a
+ * `DeplloError`.
+ *
+ * Auth = Bearer token: a workspace API key (`sk_live_…`, Dashboard → API
+ * Keys) or a Huudis access token. Pass `token`, or set `DEPLLO_TOKEN`.
  *
  *   import { DeplloClient } from "@forjio/depllo";
  *   const depllo = new DeplloClient({ token: process.env.DEPLLO_TOKEN! });
  *   const { data } = await depllo.pipelines.run("proj_…", { ref: "main" });
  */
+
+import { GeneratedApi } from './api.generated.js';
+
+export { GeneratedApi } from './api.generated.js';
 
 export interface Envelope<T> {
   data: T;
@@ -19,6 +28,22 @@ export interface Envelope<T> {
 export interface DeplloApiError {
   code: string;
   message: string;
+}
+
+/** A response that is bytes rather than JSON — a job artifact, a badge SVG —
+ *  returned as the envelope's `data`. */
+export interface DeplloFile {
+  data: Uint8Array;
+  contentType: string;
+  /** From Content-Disposition, when the server names it. */
+  filename: string | null;
+}
+
+/** A 2xx answer that is a file: not JSON, and not an HTML or plain-text page (a page at
+ *  an API path is a misconfigured base URL or a proxy, and stays an error). */
+function isFile(res: Response): boolean {
+  const type = res.headers.get('content-type') ?? '';
+  return res.ok && type !== '' && !/json|text\/(html|plain)/i.test(type);
 }
 
 export class DeplloError extends Error {
@@ -33,7 +58,8 @@ export class DeplloError extends Error {
 }
 
 export interface DeplloClientOptions {
-  /** Huudis access token (Bearer). Required for authenticated calls. */
+  /** Bearer token — an `sk_live_…` API key (Dashboard → API Keys) or a Huudis
+   *  access token. Defaults to the `DEPLLO_TOKEN` environment variable. */
   token?: string;
   /** API base, default `https://depllo.forjio.com/api/v1`. */
   baseUrl?: string;
@@ -128,10 +154,13 @@ export class DeplloClient {
   readonly jobs: JobsResource;
   readonly runners: RunnersResource;
   readonly usage: UsageResource;
+  /** Every feature route, one method each (generated from the API spec: api.generated.ts). */
+  readonly api: GeneratedApi;
 
   constructor(opts: DeplloClientOptions = {}) {
     this.baseUrl = (opts.baseUrl ?? DEFAULT_BASE).replace(/\/+$/, '');
-    this.token = opts.token;
+    this.token =
+      opts.token ?? (typeof process !== 'undefined' ? process.env?.DEPLLO_TOKEN : undefined) ?? undefined;
     const f = opts.fetch ?? (globalThis.fetch as typeof fetch | undefined);
     if (!f) {
       throw new DeplloError('No fetch implementation available — pass one via options.fetch.');
@@ -143,6 +172,25 @@ export class DeplloClient {
     this.jobs = new JobsResource(this);
     this.runners = new RunnersResource(this);
     this.usage = new UsageResource(this);
+    this.api = new GeneratedApi(this);
+  }
+
+  /** The call behind `client.api.*`: the same bearer token, idempotency key and
+   *  envelope as every other call. The spec's paths carry the /api/v1 prefix the base
+   *  URL already ends in. */
+  apigenRequest(
+    method: string,
+    path: string,
+    query: Record<string, unknown> | undefined,
+    body: unknown,
+  ): Promise<Envelope<unknown>> {
+    const rel = path.startsWith('/api/v1/') ? path.slice('/api/v1'.length) : path;
+    const q = query
+      ? Object.fromEntries(
+          Object.entries(query).map(([k, v]): [string, string] => [k, typeof v === 'string' ? v : JSON.stringify(v)]),
+        )
+      : undefined;
+    return this.request<unknown>(method, rel, { query: q, body });
   }
 
   /** @internal */
@@ -170,6 +218,18 @@ export class DeplloClient {
       headers,
       body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
     });
+
+    if (isFile(res)) {
+      const disposition = res.headers.get('content-disposition') ?? '';
+      const star = /filename\*=UTF-8''([^;]+)/i.exec(disposition);
+      const plain = /filename="?([^";]+)"?/i.exec(disposition);
+      const file: DeplloFile = {
+        data: new Uint8Array(await res.arrayBuffer()),
+        contentType: res.headers.get('content-type') ?? 'application/octet-stream',
+        filename: star ? decodeURIComponent(star[1]!) : (plain?.[1] ?? null),
+      };
+      return { data: file as T, error: null };
+    }
 
     const text = await res.text();
     let parsed: Envelope<T> | null = null;

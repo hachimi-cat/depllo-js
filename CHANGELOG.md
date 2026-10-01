@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.2.0
+- A route read by id next to its list is named `get` + the list's name: `client.api.projectsGetPipelines` (was `client.api.projectsPipelines2`). Each old name stays as a deprecated alias.
+
 ## 0.1.2
 - `token` may be a workspace API key (`sk_live_…`); the client falls back to `DEPLLO_TOKEN`.
 - `client.api` covers the API-key routes (`apiKeysList` / `apiKeysCreate` / `apiKeysDelete`).

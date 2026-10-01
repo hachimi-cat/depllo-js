@@ -171,6 +171,11 @@ export class GeneratedApi {
     return this.call("GET", `/api/v1/projects/${encodeURIComponent(id)}`, {}, undefined);
   }
 
+  /** Get a pipeline (GET /api/v1/projects/{id}/pipelines/{iid}) */
+  projectsGetPipelines(id: string, iid: string): Promise<unknown> {
+    return this.call("GET", `/api/v1/projects/${encodeURIComponent(id)}/pipelines/${encodeURIComponent(iid)}`, {}, undefined);
+  }
+
   /** List projects (GET /api/v1/projects) */
   projectsList(): Promise<unknown> {
     return this.call("GET", `/api/v1/projects`, {}, undefined);
@@ -185,11 +190,6 @@ export class GeneratedApi {
     query["source"] = all["source"]; delete all["source"];
     query["status"] = all["status"]; delete all["status"];
     return this.call("GET", `/api/v1/projects/${encodeURIComponent(id)}/pipelines`, query, undefined);
-  }
-
-  /** Get a pipeline (GET /api/v1/projects/{id}/pipelines/{iid}) */
-  projectsPipelines2(id: string, iid: string): Promise<unknown> {
-    return this.call("GET", `/api/v1/projects/${encodeURIComponent(id)}/pipelines/${encodeURIComponent(iid)}`, {}, undefined);
   }
 
   /** Cancel a pipeline (POST /api/v1/projects/{id}/pipelines/{iid}/cancel) */
@@ -278,5 +278,10 @@ export class GeneratedApi {
   /** List usage (GET /api/v1/usage) */
   usageList(): Promise<unknown> {
     return this.call("GET", `/api/v1/usage`, {}, undefined);
+  }
+
+  /** @deprecated The old name of `projectsGetPipelines` (GET /api/v1/projects/{id}/pipelines/{iid}). */
+  projectsPipelines2(...args: Parameters<GeneratedApi["projectsGetPipelines"]>): Promise<unknown> {
+    return this.projectsGetPipelines(...args);
   }
 }

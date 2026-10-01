@@ -16,8 +16,18 @@
  */
 
 import { GeneratedApi } from './api.generated.js';
+import { DeplloError } from './errors.js';
 
 export { GeneratedApi } from './api.generated.js';
+export {
+  verifyWebhook,
+  type DeplloWebhookEvent,
+  type DeplloEventType,
+  type DeplloProjectRef,
+  type PipelineFinishedData,
+  type JobFinishedData,
+  type WebhookEndpointDisabledData,
+} from './webhooks.js';
 
 export interface Envelope<T> {
   data: T;
@@ -46,16 +56,7 @@ function isFile(res: Response): boolean {
   return res.ok && type !== '' && !/json|text\/(html|plain)/i.test(type);
 }
 
-export class DeplloError extends Error {
-  constructor(
-    message: string,
-    readonly code?: string,
-    readonly status?: number,
-  ) {
-    super(message);
-    this.name = 'DeplloError';
-  }
-}
+export { DeplloError } from './errors.js';
 
 export interface DeplloClientOptions {
   /** Bearer token — an `sk_live_…` API key (Dashboard → API Keys) or a Huudis
@@ -128,6 +129,57 @@ export interface Runner {
   lastContactAt?: string | null;
 }
 
+/** A webhook endpoint (GET /webhook-endpoints). The signing secret is only in the
+ *  response that created it (`secret`); afterwards `secretPreview` shows its end. */
+export interface WebhookEndpoint {
+  id: string;
+  url: string;
+  /** Event types, prefixes ending in `*` (`depllo.job.*`), or `*`. */
+  events: string[];
+  description: string | null;
+  active: boolean;
+  secretPreview: string;
+  /** Failed attempts in a row since the last 2xx. */
+  consecutiveFailures: number;
+  failingSince: string | null;
+  /** Set when Depllo switched the endpoint off because it kept failing. */
+  disabledAt: string | null;
+  disabledReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WebhookDeliveryAttempt {
+  attemptNumber: number;
+  status: 'succeeded' | 'failed';
+  responseCode: number | null;
+  durationMs: number;
+  error: string | null;
+  nextRetryAt: string | null;
+  attemptedAt: string;
+}
+
+/** One event sent to one endpoint (GET /webhook-deliveries). */
+export interface WebhookDelivery {
+  id: string;
+  endpointId: string;
+  endpointUrl: string;
+  eventId: string;
+  type: string;
+  /** The exact JSON body sent on every attempt. */
+  body: string;
+  status: 'pending' | 'succeeded' | 'failed';
+  attempts: number;
+  nextRetryAt: string | null;
+  lastAttemptAt: string | null;
+  deliveredAt: string | null;
+  responseCode: number | null;
+  lastError: string | null;
+  createdAt: string;
+  updatedAt: string;
+  attemptLog: WebhookDeliveryAttempt[];
+}
+
 export interface Usage {
   accountId: string;
   periodStart: string;
@@ -154,6 +206,8 @@ export class DeplloClient {
   readonly jobs: JobsResource;
   readonly runners: RunnersResource;
   readonly usage: UsageResource;
+  readonly webhookEndpoints: WebhookEndpointsResource;
+  readonly webhookDeliveries: WebhookDeliveriesResource;
   /** Every feature route, one method each (generated from the API spec: api.generated.ts). */
   readonly api: GeneratedApi;
 
@@ -172,6 +226,8 @@ export class DeplloClient {
     this.jobs = new JobsResource(this);
     this.runners = new RunnersResource(this);
     this.usage = new UsageResource(this);
+    this.webhookEndpoints = new WebhookEndpointsResource(this);
+    this.webhookDeliveries = new WebhookDeliveriesResource(this);
     this.api = new GeneratedApi(this);
   }
 
@@ -335,5 +391,50 @@ class UsageResource {
   constructor(private readonly c: DeplloClient) {}
   get(): Promise<Envelope<Usage>> {
     return this.c.request('GET', '/usage');
+  }
+}
+
+class WebhookEndpointsResource {
+  constructor(private readonly c: DeplloClient) {}
+  /** The event types an endpoint can subscribe to. */
+  eventTypes(): Promise<Envelope<{ eventTypes: Array<{ type: string; description: string }> }>> {
+    return this.c.request('GET', '/webhook-endpoints/event-types');
+  }
+  list(): Promise<Envelope<WebhookEndpoint[]>> {
+    return this.c.request('GET', '/webhook-endpoints');
+  }
+  get(endpointId: string): Promise<Envelope<WebhookEndpoint>> {
+    return this.c.request('GET', `/webhook-endpoints/${encodeURIComponent(endpointId)}`);
+  }
+  /** Register an endpoint. `secret` is in this response only — store it. */
+  create(input: { url: string; events?: string[]; description?: string }): Promise<Envelope<WebhookEndpoint & { secret: string }>> {
+    return this.c.request('POST', '/webhook-endpoints', { body: input });
+  }
+  /** `active: true` re-enables an endpoint Depllo switched off and clears its failure streak. */
+  update(
+    endpointId: string,
+    patch: { url?: string; events?: string[]; description?: string | null; active?: boolean },
+  ): Promise<Envelope<WebhookEndpoint>> {
+    return this.c.request('PATCH', `/webhook-endpoints/${encodeURIComponent(endpointId)}`, { body: patch });
+  }
+  delete(endpointId: string): Promise<Envelope<{ deleted: boolean; id: string }>> {
+    return this.c.request('DELETE', `/webhook-endpoints/${encodeURIComponent(endpointId)}`);
+  }
+}
+
+class WebhookDeliveriesResource {
+  constructor(private readonly c: DeplloClient) {}
+  /** Newest first; page with `meta.cursor` while `meta.hasMore`. */
+  list(
+    opts: { endpointId?: string; status?: 'pending' | 'succeeded' | 'failed'; type?: string; limit?: number; cursor?: string } = {},
+  ): Promise<Envelope<WebhookDelivery[]>> {
+    return this.c.request('GET', '/webhook-deliveries', { query: { ...opts } });
+  }
+  get(deliveryId: string): Promise<Envelope<WebhookDelivery>> {
+    return this.c.request('GET', `/webhook-deliveries/${encodeURIComponent(deliveryId)}`);
+  }
+  /** One more attempt now (202). 409 ALREADY_QUEUED / ENDPOINT_DISABLED. */
+  retry(deliveryId: string): Promise<Envelope<WebhookDelivery>> {
+    return this.c.request('POST', `/webhook-deliveries/${encodeURIComponent(deliveryId)}/retry`);
   }
 }

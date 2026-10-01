@@ -7,7 +7,7 @@ export interface ApigenTransport {
   apigenRequest(method: string, path: string, query: Record<string, unknown> | undefined, body: unknown): Promise<unknown>;
 }
 
-/** All 45 feature routes of the Depllo API. */
+/** All 54 feature routes of the Depllo API. */
 export class GeneratedApi {
   constructor(private readonly client: ApigenTransport) {}
 
@@ -278,6 +278,62 @@ export class GeneratedApi {
   /** List usage (GET /api/v1/usage) */
   usageList(): Promise<unknown> {
     return this.call("GET", `/api/v1/usage`, {}, undefined);
+  }
+
+  /** Get a webhook delivery, with every attempt made at it. (GET /api/v1/webhook-deliveries/{id}) */
+  webhookDeliveriesGet(id: string): Promise<unknown> {
+    return this.call("GET", `/api/v1/webhook-deliveries/${encodeURIComponent(id)}`, {}, undefined);
+  }
+
+  /** List webhook deliveries, newest first: status (pending, succeeded, failed), attempt count, next retry, the body sent and every attempt made (`attemptLog`). (GET /api/v1/webhook-deliveries) */
+  webhookDeliveriesList(input?: { "limit"?: number; "cursor"?: string; "endpointId"?: string; "status"?: "pending" | "succeeded" | "failed"; "type"?: string }): Promise<unknown> {
+    const all: Record<string, unknown> = { ...(input ?? {}) };
+    const query: Record<string, unknown> = {};
+    query["limit"] = all["limit"]; delete all["limit"];
+    query["cursor"] = all["cursor"]; delete all["cursor"];
+    query["endpointId"] = all["endpointId"]; delete all["endpointId"];
+    query["status"] = all["status"]; delete all["status"];
+    query["type"] = all["type"]; delete all["type"];
+    return this.call("GET", `/api/v1/webhook-deliveries`, query, undefined);
+  }
+
+  /** Retry a webhook delivery: one more attempt now at a failed delivery (or send a succeeded one again). (POST /api/v1/webhook-deliveries/{id}/retry) */
+  webhookDeliveriesRetry(id: string): Promise<unknown> {
+    return this.call("POST", `/api/v1/webhook-deliveries/${encodeURIComponent(id)}/retry`, {}, undefined);
+  }
+
+  /** Register a webhook endpoint. (POST /api/v1/webhook-endpoints) */
+  webhookEndpointsCreate(input: { "url": string; "events"?: unknown[]; "description"?: string; [field: string]: unknown }): Promise<unknown> {
+    const all: Record<string, unknown> = { ...(input ?? {}) };
+    const query: Record<string, unknown> = {};
+    return this.call("POST", `/api/v1/webhook-endpoints`, query, all);
+  }
+
+  /** Delete a webhook endpoint and its delivery log. (DELETE /api/v1/webhook-endpoints/{id}) */
+  webhookEndpointsDelete(id: string): Promise<unknown> {
+    return this.call("DELETE", `/api/v1/webhook-endpoints/${encodeURIComponent(id)}`, {}, undefined);
+  }
+
+  /** The event types an endpoint can subscribe to, with what each reports. (GET /api/v1/webhook-endpoints/event-types) */
+  webhookEndpointsEventTypes(): Promise<unknown> {
+    return this.call("GET", `/api/v1/webhook-endpoints/event-types`, {}, undefined);
+  }
+
+  /** Get a webhook endpoint. (GET /api/v1/webhook-endpoints/{id}) */
+  webhookEndpointsGet(id: string): Promise<unknown> {
+    return this.call("GET", `/api/v1/webhook-endpoints/${encodeURIComponent(id)}`, {}, undefined);
+  }
+
+  /** List the workspace's webhook endpoints, newest first. (GET /api/v1/webhook-endpoints) */
+  webhookEndpointsList(): Promise<unknown> {
+    return this.call("GET", `/api/v1/webhook-endpoints`, {}, undefined);
+  }
+
+  /** Update a webhook endpoint. `active: false` pauses it (its queued deliveries become failed); `active: true` re-enables it — also after Depllo switched it off for failing — and clears its failure streak (PATCH /api/v1/webhook-endpoints/{id}) */
+  webhookEndpointsUpdate(id: string, input?: { "url"?: string; "events"?: unknown[]; "description"?: string; "active"?: boolean; [field: string]: unknown }): Promise<unknown> {
+    const all: Record<string, unknown> = { ...(input ?? {}) };
+    const query: Record<string, unknown> = {};
+    return this.call("PATCH", `/api/v1/webhook-endpoints/${encodeURIComponent(id)}`, query, all);
   }
 
   /** @deprecated The old name of `projectsGetPipelines` (GET /api/v1/projects/{id}/pipelines/{iid}). */

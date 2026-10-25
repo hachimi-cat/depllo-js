@@ -131,7 +131,7 @@ export class GeneratedApi {
   }
 
   /** Pipelines a project (POST /api/v1/projects/{id}/pipelines) */
-  projectsCreatePipelines(id: string, input: { "ref": string; "variables"?: Record<string, unknown>; [field: string]: unknown }): Promise<unknown> {
+  projectsCreatePipelines(id: string, input: { "ref": string; "sha"?: string; "variables"?: Record<string, unknown>; [field: string]: unknown }): Promise<unknown> {
     const all: Record<string, unknown> = { ...(input ?? {}) };
     const query: Record<string, unknown> = {};
     return this.call("POST", `/api/v1/projects/${encodeURIComponent(id)}/pipelines`, query, all);
